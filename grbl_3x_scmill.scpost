@@ -1,0 +1,310 @@
+-- GRBL mill/router post based on <HAAS TM-2P inc arcs.scpost>
+
+function OnAbout(event)
+	ctrl = event:GetTextCtrl()
+	ctrl:AppendText( "GRBL 3-axis SheetCAM TNG post by kfmut, version 2022-09-06\n" )
+	ctrl:AppendText( "( https://github.com/kfmut/grbl_3x_sc_post )\n\n" )
+	ctrl:AppendText( "G28 safe postion is ON\n" )
+	ctrl:AppendText( "Tool change M6 commands is ON\n" )
+	ctrl:AppendText( "Line numbering is ON\n\n" )
+	ctrl:AppendText( "BEWARE: first toolchange position is explicitly specified at SafeZ height\n" )
+end
+
+-- post options
+--post.DefineCustomOption( "Program number","progNumber",sc.unit0DECPLACE,0,99)
+
+function OnInit()
+	-- enable G28 moves, safe position must be set with G28.1, true/false
+	g28Moves = true
+	-- block numbering, true/false
+	nonumbers = false
+	-- starting number 
+	lineNumber = 1
+	-- line numbering increments
+	lineNumberInc = 1
+	-- stitch circle quadrants together ???
+--	bigarcs = 1 
+	-- arcs smaller than this are converted to linear moves
+	minArcSize = 0.1
+	postDebug = false
+
+	-- DO NOT TOUCH AFTER THIS
+	coolantUse = false
+
+	--post.ShowCustomOptions();
+
+	post.SetCommentChars ( "()", "[]" )
+
+	post.TextDirect( "( GRBL 3-axis SheetCAM TNG post by kfmut, version 2022-09-06 )\n" )
+	post.TextDirect( "( https://github.com/kfmut/grbl_3x_sc_post )\n" )
+	post.TextDirect( "\n" )
+	
+	-- program information
+	post.TextDirect( "( Filename: ", fileName, " )\n" )
+	post.TextDirect( "( Post processor: ", postName, " )\n" )
+	post.TextDirect( "( Timestamp: ", date, ", ", time, " )\n" )
+	post.TextDirect( "\n" )
+	
+	-- post header
+	post.Eol()
+	-- working plane
+	post.TextDirect( "( XY Plane )\n" )
+	post.Text( "G17\n" )
+
+	-- units
+	if(scale == metric) then
+		post.TextDirect( "( Units - Metric )\n" )
+		post.Text( "G21\n" )
+		numFormat = "0.000"
+		arcFormat = "0.000"
+	else
+		post.TextDirect( "( Units - Inches )\n" )
+		post.Text( "G20\n" )
+		numFormat = "0.0000"
+		arcFormat = "0.0000"
+	end
+
+	-- feedrate mode
+	post.TextDirect( "( Feedrate - Units per minute )\n" )
+	post.Text( "G94\n" )
+
+	-- forced head lift
+	if g28Moves then
+		post.TextDirect( "( Safety move )\n" )
+		post.Text( "G28 G91 Z0\n" )
+	end
+
+	--  absolute distance mode
+	post.TextDirect( "( Distance mode - Absolute )\n" )
+	post.Text( "G90\n" )
+	post.TextDirect( "\n" )	
+end
+
+function OnNewLine()
+	if nonumbers then
+		return
+	end
+
+	post.Text( "N" )
+	post.Number( lineNumber, "00000" )
+	post.Text( " " )
+	lineNumber = lineNumber + lineNumberInc
+end
+
+
+function OnFinish()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnFinish )\n" )
+	end	
+
+	post.TextDirect( "\n" )
+	if g28Moves then
+		post.TextDirect( "( PARKING )\n" )
+		post.Text( "G28 G91 Z0\n" )
+		post.Text( "G28 G91 X0 Y0\n" )
+	end
+	post.Text( "M30\n" )
+	nonumbers = true
+end
+
+function OnRapidMove()
+	post.ModalText( "G0" )
+end
+
+function OnRapid()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnRapid )\n" )
+	end
+
+	OnRapidMove()
+	post.ModalNumber( " X", endX * scale, numFormat )
+	post.ModalNumber( " Y", endY * scale, numFormat )
+	post.ModalNumber( " Z", ( endZ + toolOffset ) * scale, numFormat )
+	post.Eol()
+end
+
+function OnMove()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnMove )\n" )
+	end
+	
+	post.ModalText( "G1" )
+	post.ModalNumber( " X", endX * scale, numFormat )
+	post.ModalNumber( " Y", endY * scale, numFormat )
+	post.ModalNumber( " Z", ( endZ + toolOffset ) * scale, numFormat )
+	if ( currentX ~= endX ) or ( currentY ~= endY ) or ( currentZ ~= endZ ) then
+		post.ModalNumber( " F", feedRate * scale, "0.###" )
+		post.ModalNumber( " S", spindleSpeed, "0.##" )
+	end
+	post.Eol()
+end
+
+function OnArc()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnArc )\n" )
+	end
+	
+	if( arcAngle < 0 ) then
+		post.ModalText( "G3" )
+	else
+		post.ModalText( "G2" )
+	end
+	post.NonModalNumber( " X", endX * scale, numFormat )
+	post.NonModalNumber( " Y", endY * scale, numFormat )
+	post.ModalNumber( " Z", ( endZ + toolOffset ) * scale, numFormat )
+	post.Text( " I" )
+	post.Number( ( arcCentreX - currentX ) * scale, arcFormat )
+	post.Text( " J" )
+	post.Number( ( arcCentreY - currentY ) * scale, arcFormat )
+	post.ModalNumber( " F", feedRate * scale, "0.###" )
+	post.ModalNumber( " S", spindleSpeed, "0.##" )
+	post.Eol()
+end
+
+
+function OnSpindleCW()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnSpindleCW )\n" )
+	end	
+	
+	post.CancelModaltext()
+	post.Text( "M3" )
+	post.ModalNumber( " S", spindleSpeed, "0.##" )
+	post.Eol()
+end
+
+function OnSpindleCCW()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnSpindleCCW )\n" )
+	end	
+
+	post.CancelModaltext()
+	post.Text( "M4" )
+	post.ModalNumber( " S", spindleSpeed, "0.##" )
+	post.Eol()
+end
+
+function OnSpindleOff()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnSpindleOff )\n" )
+	end	
+
+	post.CancelModaltext()
+	post.Text( "M5\n" )
+end
+
+function OnSpindleChanged()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnSpindleChanged )\n" )
+	end	
+
+	if (spindleSpeed <= 0) then
+		post.Warning( "WARNING: Spindle speed is zero" )
+	end
+end
+
+function OnToolChange()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnToolChange )\n" )
+	end	
+
+	post.TextDirect( "\n" )
+	post.CancelModaltext()
+	OnRapidMove()
+	post.ModalNumber( " X", endX * scale, numFormat )
+	post.ModalNumber( " Y", endY * scale, numFormat )
+	post.Eol()
+	post.ModalNumber( " Z", safeZ * scale, numFormat )
+	post.Eol()
+	post.Text( "( MSG, ", toolName, " )\n" )
+	post.Text( "T" )
+	post.Number( tool, "000" )
+	post.Text( " M6\n" )
+	post.TextDirect( "\n" )
+end
+
+function OnMistOn()
+	coolantUse = true
+	post.CancelModaltext()
+	post.Text( "M7 (Mist coolant on)\n" )
+end
+
+function OnFloodOn()
+	coolantUse = true
+	post.CancelModaltext()
+	post.Text( "M8 (Flood coolant on)\n" )
+end
+
+function OnCoolantOff()
+	if coolantUse then
+		post.CancelModaltext()
+		post.Text( "M9 (Coolant off)\n" )
+		coolantUse = false
+	end
+end
+
+-- ????????
+function OnDrill()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnDrill )\n" )
+	end	
+
+	OnRapid()
+	depth = drillStart
+	buffer = plungeSafety
+	endZ = depth + buffer
+	OnRapid()
+	if(drillRetract < buffer) then
+	  buffer = drillRetract
+	end
+	while depth > drillZ do
+		OnRapid()
+		depth = depth - drillPeck
+		if (depth < drillZ) then
+			depth = drillZ
+		end
+		endZ = depth
+		OnMove()
+		if (depth > drillZ) then --retract if we need to take another bite
+			endZ = endZ + drillRetract
+			if (endZ > safeZ) then
+				endZ = safeZ
+			end
+			OnRapid()
+		end
+		endZ = depth + buffer
+	end
+	if (endZ < safeZ) then
+		endZ = safeZ
+		OnRapid()
+	end
+end
+
+function OnSetFeed()
+	if postDebug then
+		post.TextDirect( "( DEBUG - OnSetFeed )\n" )
+	end	
+end
+
+function OnTapStart()
+	post.Error( "Tapping is NOT supported!" ) 
+end
+
+
+function OnNewOperation()
+	post.TextDirect( "( Process: ", operationName, " )\n" )
+	if ( plungeRate <= 0 ) then
+		post.Warning( "WARNING: Plunge rate is zero" )
+	end
+	if ( feedRate <= 0 ) then
+		post.Warning( "WARNING: Feed rate is zero" )
+	end
+end
+
+function OnNewPart()
+	post.TextDirect( "( Part: ",partName," )\n" );
+end
+
+function OnComment()
+	post.Text( " ( ",commentText," )\n" )
+end
