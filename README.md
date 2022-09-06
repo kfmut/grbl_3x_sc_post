@@ -1,10 +1,11 @@
 # grbl_3x_sc_post
 
-GRBL 3-axis mill/router post processor for Stable Design SheetCam
+GRBL 3-axis mill/router post processor for Stable Design SheetCam TNG
 
 ## Notes
 
 Post processor is tested with SheetCam TNG V6.0.30
+
 **G28 safe postion is ON\
 Tool change M6 commands is ON\
 Line numbering is ON**
